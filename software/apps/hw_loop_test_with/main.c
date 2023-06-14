@@ -39,7 +39,7 @@ int main() {
                   : [i] "+&r"(i), [j] "+&r"(j)  /* Outputs */
                   : [N] "r"(10)     /* Inputs */
                   : /* Clobber */);
-      
+    printf("i: %3d, j: %3d\n", i,j);
   }
   // wait until all cores have finished
   mempool_barrier(num_cores);
