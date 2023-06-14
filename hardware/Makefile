@@ -25,7 +25,7 @@ dpi_library     ?= work-dpi
 # Top level module to compile
 top_level       ?= mempool_tb
 # QuestaSim Version
-questa_version  ?= 2021.2-bt
+questa_version  ?= 2019.3-kgf
 # QuestaSim command
 questa_cmd      ?= questa-$(questa_version)
 # QuestaSim arguments
@@ -90,6 +90,7 @@ vlog_args += -work $(library)
 vlog_defs += -DNUM_CORES=$(num_cores) -DNUM_CORES_PER_TILE=$(num_cores_per_tile) -DNUM_GROUPS=$(num_groups) -DBANKING_FACTOR=$(banking_factor)
 vlog_defs += -DL2_BASE=$(l2_base) -DL2_SIZE=$(l2_size) -DL2_BANKS=$(l2_banks)
 vlog_defs += -DBOOT_ADDR=$(boot_addr) -DXPULPIMG=$(xpulpimg)
+vlog_defs += -DXPULPHWLOOP=$(xpulphwloop) -DXPULPNUMHWLOOPS=$(numhwloops)
 vlog_defs += -DSNITCH_TRACE=$(snitch_trace)
 vlog_defs += -DAXI_DATA_WIDTH=$(axi_data_width)
 vlog_defs += -DRO_LINE_WIDTH=$(ro_line_width)

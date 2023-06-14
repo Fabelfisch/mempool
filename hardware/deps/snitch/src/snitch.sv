@@ -92,6 +92,32 @@ module snitch
   localparam int RegNrReadPorts = snitch_pkg::XPULPIMG ? 3 : 2;
   localparam logic [RegWidth-1:0] SP = 2;
   localparam int OutstandingWfi = 8;
+  
+  /////////////////////////////////////////////////////////////////////////////
+  //
+  //                                   XPULPHWLOOP
+  //
+  /////////////////////////////////////////////////////////////////////////////
+  localparam int unsigned HWLOOPIDWidth = $clog2(snitch_pkg::XPULPNUMHWLOOPS);
+  
+  // Hardware Loop Module Inputs
+  logic [HWLOOPIDWidth-1:0] hwloop_regid;
+  logic [31:0]              hwloop_start_address;
+  logic [31:0]              hwloop_end_address;
+  logic [31:0]              hwloop_cnt_data;
+  logic                     hwloop_we_start_register;
+  logic                     hwloop_we_end_register;
+  logic                     hwloop_we_count_register;
+  logic                     hwloop_valid;
+
+  // Hardware Loop Module Outputs
+  logic [31:0]              hwloop_targ_addr;
+  logic                     hwloop_jump;
+
+  logic [1:0]               hwloop_start_mux_sel;
+  logic                     hwloop_end_mux_sel;
+  logic                     hwloop_cnt_mux_sel;
+  /////////////////////////////////////////////////////////////////////////////
 
   logic illegal_inst;
   logic zero_lsb;
@@ -195,7 +221,7 @@ module snitch
   logic uses_rd;
   logic write_rs1; // write rs1 destination this cycle
   logic uses_rs1;
-  enum logic [1:0] {Consec, Alu, Exception} next_pc;
+  enum logic [1:0] {Consec, Alu, Exception, HWLoop} next_pc;
 
   enum logic [1:0] {RdAlu, RdConsecPC, RdBypass} rd_select;
   logic [31:0] rd_bypass;
@@ -280,6 +306,7 @@ module snitch
         Consec: pc_d = consec_pc;
         Alu: pc_d = alu_result & {{31{1'b1}}, ~zero_lsb};
         Exception: pc_d = MTVEC;
+        HWLoop: pc_d = hwloop_targ_addr;
       endcase
     end
   end
@@ -348,6 +375,12 @@ module snitch
     wfi_d = (wake_up_q || wake_up_sync_i) ? 1'b0 : wfi_q;
     // Only store a pending wake-up if we are not asleep
     wake_up_d = (wake_up_sync_i && !wfi_q) ? wake_up_q + 1 : wake_up_q;
+
+    // Disable the HW Loop registers by default
+    hwloop_we_start_register = 1'b0;
+    hwloop_we_end_register   = 1'b0;
+    hwloop_we_count_register = 1'b0;
+
 
     unique casez (inst_data_i)
       riscv_instr::ADD: begin
@@ -798,6 +831,106 @@ module snitch
         opb_select = Reg;
         acc_register_rd = 1'b1;
       end
+////////////////////////////////////////////////////////////////////////////////////////
+//
+//                                  XPULPHWLOOP
+//
+////////////////////////////////////////////////////////////////////////////////////////
+      riscv_instr::LP_STARTI: begin
+        if (snitch_pkg::XPULPHWLOOP) begin
+          // lp.starti: set start address to PC + I-type immediate
+          hwloop_we_start_register   = 1'b1;
+          hwloop_start_mux_sel       = 2'b00;
+          write_rd                   = 1'b0;
+        end else begin
+          illegal_inst = 1'b1;
+        end   
+      end
+      riscv_instr::LP_START: begin
+        if (snitch_pkg::XPULPHWLOOP) begin
+          // lp.start: set start address to rs1
+          hwloop_we_start_register   = 1'b1;
+          hwloop_start_mux_sel       = 2'b01;
+          opa_select                 = Reg;
+          write_rd                   = 1'b0;
+        end else begin
+          illegal_inst = 1'b1;
+        end   
+      end
+      riscv_instr::LP_ENDI: begin
+        if (snitch_pkg::XPULPHWLOOP) begin
+          // lp.endi: set end address to PC + I-type immediate
+          hwloop_we_end_register   = 1'b1;
+          hwloop_end_mux_sel       = 1'b0;
+          write_rd                 = 1'b0;
+        end else begin
+          illegal_inst = 1'b1;
+        end     
+      end
+      riscv_instr::LP_END: begin
+        if (snitch_pkg::XPULPHWLOOP) begin
+          // lp.endi: set end address to rs1
+          hwloop_we_end_register   = 1'b1;
+          hwloop_end_mux_sel       = 1'b1;
+          opa_select               = Reg;
+          write_rd                 = 1'b0;
+        end else begin
+          illegal_inst = 1'b1;
+        end     
+      end
+      riscv_instr::LP_COUNT: begin
+        if (snitch_pkg::XPULPHWLOOP) begin
+          // lp.count: initialize counter from rs1
+          hwloop_we_count_register   = 1'b1;
+          hwloop_cnt_mux_sel         = 1'b1;
+          opa_select                 = Reg;
+          write_rd                   = 1'b0;
+        end else begin
+          illegal_inst = 1'b1;
+        end  
+      end
+      riscv_instr::LP_COUNTI: begin
+        if (snitch_pkg::XPULPHWLOOP) begin
+          // lp.counti: initialize counter from I-type immediate
+          hwloop_we_count_register   = 1'b1;
+          hwloop_cnt_mux_sel         = 1'b0;
+          write_rd                   = 1'b0;
+        end else begin
+          illegal_inst = 1'b1;
+        end  
+      end
+      riscv_instr::LP_SETUP: begin
+        if (snitch_pkg::XPULPHWLOOP) begin
+            // lp.setup: initialize counter from rs1, set start address to
+            // next instruction and end address to PC + I-type immediate
+            hwloop_we_start_register   = 1'b1;
+            hwloop_we_end_register     = 1'b1;
+            hwloop_we_count_register   = 1'b1;
+            hwloop_start_mux_sel       = 2'b10;
+            hwloop_end_mux_sel         = 1'b0;
+            hwloop_cnt_mux_sel         = 1'b1;
+            opa_select                 = Reg;
+            write_rd                   = 1'b0;
+        end else begin
+          illegal_inst = 1'b1;
+        end  
+      end
+      riscv_instr::LP_SETUPI: begin
+        if (snitch_pkg::XPULPHWLOOP) begin
+          // lp.setupi: initialize counter from immediate, set start address to
+          // next instruction and end address to PC + I-type immediate
+            hwloop_we_start_register   = 1'b1;
+            hwloop_we_end_register     = 1'b1;
+            hwloop_we_count_register   = 1'b1;
+            hwloop_start_mux_sel       = 2'b10;
+            hwloop_end_mux_sel         = 1'b0;
+            hwloop_cnt_mux_sel         = 1'b0;
+            write_rd                   = 1'b0;
+        end else begin
+          illegal_inst = 1'b1;
+        end  
+      end
+//////////////////////////////////////////////////////////////////////////////////////////
 
 /* Xpulpimg extension */
       // Post-increment loads/stores
@@ -1351,6 +1484,16 @@ module snitch
       end
     endcase
 
+    /////////////////////////////////////////////////////////////////////////////////////////
+    //
+    //                                        XPULPHWLOOP
+    //
+    /////////////////////////////////////////////////////////////////////////////////////////
+    if (hwloop_jump) begin
+      next_pc = HWLoop;
+    end
+    /////////////////////////////////////////////////////////////////////////////////////////
+
     // Sanitize illegal instructions so that they don't exert any side-effects.
     if (exception) begin
      write_rd = 1'b0;
@@ -1463,6 +1606,63 @@ module snitch
     .wdata_i   ( gpr_wdata ),
     .we_i      ( gpr_we    )
   );
+
+  snitch_hwloops #(
+    .N_HW_LOOPS     (snitch_pkg::XPULPNUMHWLOOPS)
+  ) i_snitch_hwloops (
+    .clk_i                      (clk_i),
+    .rst_ni                     (~rst_i),
+
+    .hwloop_start_address_i     (hwloop_start_address),
+    .hwloop_end_address_i       (hwloop_end_address),
+    .hwloop_cnt_data_i          (hwloop_cnt_data),
+
+    .hwloop_we_start_register_i (hwloop_we_start_register),             
+    .hwloop_we_end_register_i   (hwloop_we_end_register),               
+    .hwloop_we_count_register_i (hwloop_we_count_register),             
+
+    .hwloop_regid_i             (hwloop_regid),
+
+    .hwloop_valid_i             (hwloop_valid),
+
+    .current_pc_i               (pc_q),
+
+    .hwloop_jump_o              (hwloop_jump),
+    .hwloop_targ_addr_o         (hwloop_targ_addr)
+  );
+
+
+    // hwloop start mux
+    always_comb begin : hwloop_start_mux
+      case (hwloop_start_mux_sel)
+        2'b00: hwloop_start_address = pc_q + {iimm[30:0], 1'b0};        // for PC + immediate
+        2'b01: hwloop_start_address = opa;                              // register value
+        2'b10: hwloop_start_address = pc_d;                             // for next PC
+      endcase
+    end
+
+    // hwloop end mux
+    always_comb begin : hwloop_end_mux
+      case (hwloop_end_mux_sel)
+        1'b0: hwloop_end_address = pc_q + {iimm[30:0], 1'b0};         // for PC + immediate
+        1'b1: hwloop_end_address = opa;                               // register value
+      endcase
+    end
+
+    // hwloop cnt mux
+    always_comb begin : hwloop_cnt_mux
+      case (hwloop_cnt_mux_sel)
+        1'b0: hwloop_cnt_data = iimm;  // for PC + immediate
+        1'b1: hwloop_cnt_data = opa;   // register value
+      endcase;
+    end
+
+
+    // hwloop register id
+    assign hwloop_regid = rd[0];   // rd contains hwloop register id
+
+    // asserted if this a valid hwloop instruction
+    assign hwloop_valid = inst_valid_o & ~stall;
 
   // --------------------
   // Operand Select

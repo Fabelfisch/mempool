@@ -65,3 +65,8 @@ xqueue_size ?= 0
 
 # Enable the XpulpIMG extension
 xpulpimg ?= 1
+
+
+# Enable the XpulpHWLoop extension
+xpulphwloop ?= 1
+numhwloops ?= 2

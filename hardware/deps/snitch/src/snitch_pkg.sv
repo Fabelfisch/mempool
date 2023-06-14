@@ -15,6 +15,10 @@ package snitch_pkg;
   localparam MetaIdWidth                = idx_width(NumIntOutstandingLoads);
   // Xpulpimg extension enabled?
   localparam bit XPULPIMG = `ifdef XPULPIMG `XPULPIMG `else 1'bX `endif;
+  // Xpulphwloop extension enabled?
+  localparam bit XPULPHWLOOP = `ifdef XPULPHWLOOP `XPULPHWLOOP `else 1'bX `endif;
+  /// Number of hw loops
+  localparam int unsigned XPULPNUMHWLOOPS = `ifdef XPULPNUMHWLOOPS `XPULPNUMHWLOOPS `else 2 `endif;
 
   typedef logic [31:0]               addr_t;
   typedef logic [DataWidth-1:0]      data_t;

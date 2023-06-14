@@ -24,6 +24,8 @@ OMP_DIR            ?= $(ROOT_DIR)/omp
 
 COMPILER      ?= gcc
 XPULPIMG      ?= $(xpulpimg)
+XPULPHWLOOP   	?= $(xpulphwloop)
+XPULPNUMHWLOOPS ?= $(numhwloops)
 
 RISCV_XLEN    ?= 32
 
@@ -33,8 +35,8 @@ ifeq ($(COMPILER),gcc)
 	# Use GCC
 	# GCC compiler -march
 	ifeq ($(XPULPIMG),1)
-		RISCV_ARCH    ?= rv$(RISCV_XLEN)imaXpulpimg
-		RISCV_ARCH_AS ?= $(RISCV_ARCH)
+		RISCV_ARCH    ?= rv$(RISCV_XLEN)ima#Xpulpimg
+		RISCV_ARCH_AS ?= $(RISCV_ARCH)Xpulpv2
 		# Define __XPULPIMG if the extension is active
 		DEFINES       += -D__XPULPIMG
 	else

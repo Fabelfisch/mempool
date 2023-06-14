@@ -102,6 +102,9 @@ int main() {
   // Initialize Matrices
   init_matrix(a, M, N, A_a, A_b, A_c, core_id, num_cores);
   init_matrix(b, N, P, B_a, B_b, B_c, core_id, num_cores);
+  if (core_id == 0) {
+    printf("Matrices initialized\n");
+  }
 
 #ifdef VERBOSE
   mempool_barrier(num_cores);
@@ -112,7 +115,7 @@ int main() {
 #endif
 
   // Matrices are initialized --> Start calculating
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 2; ++i) {
     // Wait at barrier until everyone is ready
     mempool_barrier(num_cores);
     // Execute function to test. Add a NOP before and after for future analysis
@@ -124,7 +127,7 @@ int main() {
       mat_mul_parallel(a, b, c, M, N, P, core_id, num_cores);
       break;
     case 1:
-      mat_mul_unrolled_parallel(a, b, c, M, N, P, core_id, num_cores);
+      mat_mul_parallel_hwloop(a, b, c, M, N, P, core_id, num_cores);
       break;
     case 2:
       mat_mul_asm_parallel(a, b, c, M, N, P, core_id, num_cores);

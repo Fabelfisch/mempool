@@ -42,6 +42,42 @@ void mat_mul_parallel(int32_t const *__restrict__ A,
   }
 }
 
+void mat_mul_parallel_hwloop(int32_t const *__restrict__ A,
+                      int32_t const *__restrict__ B, int32_t *__restrict__ C,
+                      uint32_t M, uint32_t N, uint32_t P, uint32_t id,
+                      uint32_t numThreads) {
+  // Parallelize by assigning each core one row
+  for (uint32_t i = id; i < M; i += numThreads) {
+    uint32_t j = 0;
+    uint32_t k = 0;
+    int32_t c = 0;
+    asm volatile("add %[j], x0, x0         \n\t"
+                "lp.count\tx1, %[P]       \n\t"
+                "lp.starti\tx1, 16        \n\t"
+                "lp.endi\tx1, end0        \n\t"
+                "lp.starti\tx0, 20        \n\t"
+                "lp.endi\tx0, endZ        \n\t"
+                "start0:                  \n\t"
+                "  add %[c], x0, x0       \n\t"
+                "  add %[k], x0, x0       \n\t"
+                "  lp.count\tx0, %[N]     \n\t"
+                "  startZ:                \n\t"
+                : [j] "+&r"(j), [k] "+&r"(k), [c] "+&r"(c) /* Outputs */
+                : [P] "r"(P), [N] "r"(N)     /* Inputs */
+                : /* Clobber */);
+    c += A[i * N + k] * B[k * P + j];
+    asm volatile("    addi %[j], %[j], 1  \n\t"
+                "  endZ:                  \n\t"               
+                : [j] "+&r"(j), [k] "+&r"(k) /* Outputs */
+                : /* Clobber */);
+    C[i * P + j] = c;
+    asm volatile("  addi %[j], %[j], 1     \n\t"
+                "end0:                     \n\t"                
+                : [j] "+&r"(j)             /* Outputs */
+                : /* Clobber */);
+  }
+}
+
 void mat_mul_parallel_finegrained(int32_t const *__restrict__ A,
                                   int32_t const *__restrict__ B,
                                   int32_t *__restrict__ C, uint32_t M,

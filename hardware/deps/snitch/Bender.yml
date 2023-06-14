@@ -8,6 +8,7 @@ package:
 
 dependencies:
   common_cells: { git: "https://github.com/pulp-platform/common_cells.git", version: 1.19.0 }
+  axi:          { git: "https://github.com/pulp-platform/axi.git",          version: 0.36.0 }
 
 sources:
   - defines:
@@ -21,6 +22,8 @@ sources:
     # rest of RTL
     - src/snitch.sv
     - src/snitch_regfile_ff.sv
+    #hw loop
+    - src/snitch_hwloops.sv
     # - src/snitch_regfile_latch.sv
     - src/snitch_lsu.sv
     - src/snitch_ipu.sv
