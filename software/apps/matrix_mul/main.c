@@ -120,41 +120,45 @@ int main() {
     mempool_barrier(num_cores);
     // Execute function to test. Add a NOP before and after for future analysis
     // with benchmark script.
-    // mempool_timer_t cycles = mempool_get_timer();
+    mempool_timer_t cycles = mempool_get_timer();
     mempool_start_benchmark();
     switch (i) {
     case 0:
-      mat_mul_parallel(a, b, c, M, N, P, core_id, num_cores);
+      // printf("Starting with parallel implementation.");
+      // mat_mul_parallel(a, b, c, M, N, P, core_id, num_cores);
+      mat_mul_asm(a, b, c, M, N, P);
       break;
     case 1:
-      mat_mul_parallel_hwloop(a, b, c, M, N, P, core_id, num_cores);
+      // printf("Starting with hwloop implementation.");
+      // mat_mul_parallel_hwloop(a, b, c, M, N, P, core_id, num_cores);
+      mat_mul_asm_hwloop(a, b, c, M, N, P);
       break;
-    case 2:
-      mat_mul_asm_parallel(a, b, c, M, N, P, core_id, num_cores);
-      break;
-    case 3:
-      mat_mul_parallel_finegrained(a, b, c, M, N, P, core_id, num_cores);
-      break;
-    case 4:
-      mat_mul_unrolled_parallel_finegrained(a, b, c, M, N, P, core_id,
-                                            num_cores);
-      break;
+    // case 2:
+    //   mat_mul_asm_parallel(a, b, c, M, N, P, core_id, num_cores);
+    //   break;
+    // case 3:
+    //   mat_mul_parallel_finegrained(a, b, c, M, N, P, core_id, num_cores);
+    //   break;
+    // case 4:
+    //   mat_mul_unrolled_parallel_finegrained(a, b, c, M, N, P, core_id,
+    //                                         num_cores);
+    //   break;
     }
     mempool_stop_benchmark();
-    // cycles = mempool_get_timer() - cycles;
+    cycles = mempool_get_timer() - cycles;
     // Wait at barrier befor checking
     mempool_barrier(num_cores);
     // Check result
     if (core_id == 0) {
-      // printf("Duration: %d\n", cycles);
+      printf("Duration: %d\n", cycles);
       int error = verify_matrix(c, M, P, A_a, A_b, A_c, B_a, B_b, B_c);
       if (error != 0) {
         printf("Error code %d\n", error);
         printf("c[%d]=%d\n", error, c[error]);
       }
-#ifdef VERBOSE
+//#ifdef VERBOSE
       printf("Done with round %d\n", i);
-#endif
+//#endif
     } else {
       // Wait for the approx amount it takes core 0 to verify the result
       mempool_wait(M * P * 12);

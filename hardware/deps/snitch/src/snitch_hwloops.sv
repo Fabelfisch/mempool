@@ -52,18 +52,13 @@ module snitch_hwloops #(
         for (i = 0; i < N_HW_LOOPS; i++) begin
             always @(*) begin
                 pc_is_end_addr[i] = 1'b0;
-                if (current_pc_i == hwloop_end[i]) begin
-                    if (hwloop_counter_q[i][31:2] != 30'h0) begin
+                if ((current_pc_i+4) == hwloop_end[i]) begin
+                    if (hwloop_counter_q[i][31:1] != 31'h0) begin
                         pc_is_end_addr[i] = 1'b1;
                     // if it is the last iteration of the loop, it
                     // should not jump back to the start
                     end else /*(hwloop_counter_q[i][31:1] == 31'h0)*/begin
-                        //pc_is_end_addr[i] = 1'b0;
-                        case (hwloop_counter_q[i][1:0])
-                            2'b11:        pc_is_end_addr[i] = 1'b1;
-                            2'b10:        pc_is_end_addr[i] = 1'b1; //~hwlp_dec_cnt_id_i[i]; // only when there is nothing in flight
-                            2'b01, 2'b00: pc_is_end_addr[i] = 1'b0;
-                        endcase
+                        pc_is_end_addr[i] = 1'b0;
                     end
                 end
             end

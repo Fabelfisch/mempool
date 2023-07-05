@@ -34,6 +34,7 @@ int main() {
                   "  startZ:                \n\t"
                   "    addi %[j], %[j], 1   \n\t"
                   "  endZ:                  \n\t"
+                  "  addi %[j], %[j], -1    \n\t"
                   "  addi %[i], %[i], 1     \n\t"
                   "end0:                    \n\t" 
                   : [i] "+&r"(i), [j] "+&r"(j)  /* Outputs */
