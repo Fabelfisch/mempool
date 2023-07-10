@@ -5,3 +5,4 @@ cd ../../hardware
 make clean
 config=minpool make compile
 config=minpool app=matrix_mul make sim
+make trace

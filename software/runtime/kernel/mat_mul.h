@@ -374,6 +374,7 @@ static inline void mat_mul_asm_parallel(int32_t const *__restrict__ A,
         "add %[c2],%[c2],%[b2] \n\t"
         "add %[c3],%[c3],%[b3] \n\t"
         "bne %[idx_a],%[end_a], 2b \n\t"
+        "3: "
         // End of inner loop. Store the finished entries of C
         "sw %[c0], 0(%[idx_c]) \n\t"
         "sw %[c1], 4(%[idx_c]) \n\t"
@@ -387,6 +388,7 @@ static inline void mat_mul_asm_parallel(int32_t const *__restrict__ A,
         "addi %[start_b], %[start_b], %[adv_b] \n\t"
         "addi %[idx_c], %[idx_c], %[adv_c] \n\t"
         "bne %[idx_c], %[end_c], 1b \n\t"
+        "4: "
         : [c0] "=&r"(c0), [c1] "=&r"(c1), [c2] "=&r"(c2), [c3] "=&r"(c3),
           [a] "=&r"(a), [b0] "=&r"(b0), [b1] "=&r"(b1), [b2] "=&r"(b2),
           [b3] "=&r"(b3), [idx_b] "+&r"(idx_b), [idx_a] "+&r"(start_a),
@@ -398,7 +400,89 @@ static inline void mat_mul_asm_parallel(int32_t const *__restrict__ A,
   }
 }
 
-static inline void mat_mul_asm_parallel_hwloop(int32_t const *__restrict__ A,
+static inline void mat_mul_asm_parallel_one_hwloop(int32_t const *__restrict__ A,
+                                        int32_t const *__restrict__ B,
+                                        int32_t *__restrict__ C, uint32_t M,
+                                        uint32_t N, uint32_t P, uint32_t id,
+                                        uint32_t numThreads) {
+  // Do this loop M times
+  for (uint32_t i = id; i < M; i += numThreads) {
+    int32_t const *start_a = &A[i * N];
+    int32_t const *end_a = &A[(i + 1) * N];
+    int32_t const *start_b = &B[0];
+    int32_t const *idx_b = &B[0];
+    int32_t *start_c = &C[i * P];
+    int32_t *end_c = &C[(i + 1) * P];
+    // Temporary registers
+    register int32_t *c0;
+    register int32_t *c1;
+    register int32_t *c2;
+    register int32_t *c3;
+    register int32_t a;
+    register int32_t b0;
+    register int32_t b1;
+    register int32_t b2;
+    register int32_t b3;
+    __asm__ volatile(
+        // Outer loop: Calculate four elements of C. Execute this loop P times
+        "lp.starti\tx1, 2f \n\t"
+        "lp.endi\tx1, 3f \n\t"
+        "1: \n\t"
+        "li %[c0],0 \n\t"
+        "li %[c1],0 \n\t"
+        "li %[c2],0 \n\t"
+        "li %[c3],0 \n\t"
+        "mv %[idx_b],%[start_b] \n\t"
+        // Inner loop: Take one element of A to multiply with four elements of
+        // B. Traverse A row major and B column major with four columns in
+        // parallel. Do this loop N times per element
+        ".balign 16 \n\t"
+        "lp.count\tx1, %[N] \n\t"
+        "2: \n\t"
+        "lw %[a], 0(%[idx_a]) \n\t"
+        "lw %[b0], 0(%[idx_b]) \n\t"
+        "lw %[b1], 4(%[idx_b]) \n\t"
+        "lw %[b2], 8(%[idx_b]) \n\t"
+        "lw %[b3],12(%[idx_b]) \n\t"
+        // Traverse A row wise --> Increment A by one word
+        "addi %[idx_a],%[idx_a],%[inc_a] \n\t"
+        // Traverse B column wise --> Increment B by P words
+        "add %[idx_b],%[idx_b],%[inc_b] \n\t"
+        "mul %[b0],%[a],%[b0] \n\t"
+        "mul %[b1],%[a],%[b1] \n\t"
+        "mul %[b2],%[a],%[b2] \n\t"
+        "mul %[b3],%[a],%[b3] \n\t"
+        "add %[c0],%[c0],%[b0] \n\t"
+        "add %[c1],%[c1],%[b1] \n\t"
+        "add %[c2],%[c2],%[b2] \n\t"
+        "add %[c3],%[c3],%[b3] \n\t"
+        "3: \n\t"
+        // End of inner loop. Store the finished entries of C
+        "sw %[c0], 0(%[idx_c]) \n\t"
+        "sw %[c1], 4(%[idx_c]) \n\t"
+        "sw %[c2], 8(%[idx_c]) \n\t"
+        "sw %[c3], 12(%[idx_c]) \n\t"
+        // A traversed one complete row + one extra word due to the
+        // structure of the loop. Undo these increments to reset
+        // `idx_a` to the first word in the row
+        "add %[idx_a], %[idx_a], %[adv_a] \n\t"
+        // Increment the index of B and C by four words
+        "addi %[start_b], %[start_b], %[adv_b] \n\t"
+        "addi %[idx_c], %[idx_c], %[adv_c] \n\t"
+        "bne %[idx_c], %[end_c], 1b \n\t"
+        "4: "
+        : [c0] "=&r"(c0), [c1] "=&r"(c1), [c2] "=&r"(c2), [c3] "=&r"(c3),
+          [a] "=&r"(a), [b0] "=&r"(b0), [b1] "=&r"(b1), [b2] "=&r"(b2),
+          [b3] "=&r"(b3), [idx_b] "+&r"(idx_b), [idx_a] "+&r"(start_a),
+          [start_b] "+&r"(start_b), [idx_c] "+&r"(start_c)
+        : [inc_a] "I"(4), [inc_b] "r"(4 * P), [adv_a] "r"(-4 * (int)N),
+          [adv_b] "I"(4 * 4), [adv_c] "I"(4 * 4), [end_a] "r"(end_a),
+          [end_c] "r"(end_c), [N] "r"(N)
+        : "memory");
+  }
+}
+
+static inline void mat_mul_asm_parallel_one_hwloop_setup(int32_t const *__restrict__ A,
                                         int32_t const *__restrict__ B,
                                         int32_t *__restrict__ C, uint32_t M,
                                         uint32_t N, uint32_t P, uint32_t id,
@@ -432,11 +516,9 @@ static inline void mat_mul_asm_parallel_hwloop(int32_t const *__restrict__ A,
         // Inner loop: Take one element of A to multiply with four elements of
         // B. Traverse A row major and B column major with four columns in
         // parallel. Do this loop N times per element
-        "lp.count\tx1, %[N] \n\t"
-        "lp.starti\tx1, s2 \n\t"
-        "lp.endi\tx1, e2 \n\t"
         ".balign 16 \n\t"
-        "s2: \n\t"
+        "lp.setup\tx1, %[N], 3f \n\t"
+        "2: \n\t"
         "lw %[a], 0(%[idx_a]) \n\t"
         "lw %[b0], 0(%[idx_b]) \n\t"
         "lw %[b1], 4(%[idx_b]) \n\t"
@@ -454,7 +536,7 @@ static inline void mat_mul_asm_parallel_hwloop(int32_t const *__restrict__ A,
         "add %[c1],%[c1],%[b1] \n\t"
         "add %[c2],%[c2],%[b2] \n\t"
         "add %[c3],%[c3],%[b3] \n\t"
-        "e2:     \n\t" 
+        "3: \n\t"
         // End of inner loop. Store the finished entries of C
         "sw %[c0], 0(%[idx_c]) \n\t"
         "sw %[c1], 4(%[idx_c]) \n\t"
@@ -468,6 +550,7 @@ static inline void mat_mul_asm_parallel_hwloop(int32_t const *__restrict__ A,
         "addi %[start_b], %[start_b], %[adv_b] \n\t"
         "addi %[idx_c], %[idx_c], %[adv_c] \n\t"
         "bne %[idx_c], %[end_c], 1b \n\t"
+        "4: "
         : [c0] "=&r"(c0), [c1] "=&r"(c1), [c2] "=&r"(c2), [c3] "=&r"(c3),
           [a] "=&r"(a), [b0] "=&r"(b0), [b1] "=&r"(b1), [b2] "=&r"(b2),
           [b3] "=&r"(b3), [idx_b] "+&r"(idx_b), [idx_a] "+&r"(start_a),
@@ -479,6 +562,172 @@ static inline void mat_mul_asm_parallel_hwloop(int32_t const *__restrict__ A,
   }
 }
 
+
+static inline void mat_mul_asm_parallel_two_hwloops(int32_t const *__restrict__ A,
+                                        int32_t const *__restrict__ B,
+                                        int32_t *__restrict__ C, uint32_t M,
+                                        uint32_t N, uint32_t P, uint32_t id,
+                                        uint32_t numThreads) {
+  // Do this loop M times
+  for (uint32_t i = id; i < M; i += numThreads) {
+    int32_t const *start_a = &A[i * N];
+    int32_t const *end_a = &A[(i + 1) * N];
+    int32_t const *start_b = &B[0];
+    int32_t const *idx_b = &B[0];
+    int32_t *start_c = &C[i * P];
+    int32_t *end_c = &C[(i + 1) * P];
+    // Temporary registers
+    register int32_t *c0;
+    register int32_t *c1;
+    register int32_t *c2;
+    register int32_t *c3;
+    register int32_t a;
+    register int32_t b0;
+    register int32_t b1;
+    register int32_t b2;
+    register int32_t b3;
+    __asm__ volatile(
+        // Outer loop: Calculate four elements of C. Execute this loop P times
+        "lp.count\tx0, %[P] \n\t"
+        "lp.starti\tx0, 1f \n\t"
+        "lp.endi\tx0, 4f \n\t"
+        "lp.starti\tx1, 2f \n\t"
+        "lp.endi\tx1, 3f \n\t"
+        "1: \n\t"
+        "li %[c0],0 \n\t"
+        "li %[c1],0 \n\t"
+        "li %[c2],0 \n\t"
+        "li %[c3],0 \n\t"
+        "mv %[idx_b],%[start_b] \n\t"
+        // Inner loop: Take one element of A to multiply with four elements of
+        // B. Traverse A row major and B column major with four columns in
+        // parallel. Do this loop N times per element
+        ".balign 16 \n\t"
+        "lp.count\tx1, %[N] \n\t"
+        "2: \n\t"
+        "lw %[a], 0(%[idx_a]) \n\t"
+        "lw %[b0], 0(%[idx_b]) \n\t"
+        "lw %[b1], 4(%[idx_b]) \n\t"
+        "lw %[b2], 8(%[idx_b]) \n\t"
+        "lw %[b3],12(%[idx_b]) \n\t"
+        // Traverse A row wise --> Increment A by one word
+        "addi %[idx_a],%[idx_a],%[inc_a] \n\t"
+        // Traverse B column wise --> Increment B by P words
+        "add %[idx_b],%[idx_b],%[inc_b] \n\t"
+        "mul %[b0],%[a],%[b0] \n\t"
+        "mul %[b1],%[a],%[b1] \n\t"
+        "mul %[b2],%[a],%[b2] \n\t"
+        "mul %[b3],%[a],%[b3] \n\t"
+        "add %[c0],%[c0],%[b0] \n\t"
+        "add %[c1],%[c1],%[b1] \n\t"
+        "add %[c2],%[c2],%[b2] \n\t"
+        "add %[c3],%[c3],%[b3] \n\t"
+        "3: \n\t"
+        // End of inner loop. Store the finished entries of C
+        "sw %[c0], 0(%[idx_c]) \n\t"
+        "sw %[c1], 4(%[idx_c]) \n\t"
+        "sw %[c2], 8(%[idx_c]) \n\t"
+        "sw %[c3], 12(%[idx_c]) \n\t"
+        // A traversed one complete row + one extra word due to the
+        // structure of the loop. Undo these increments to reset
+        // `idx_a` to the first word in the row
+        "add %[idx_a], %[idx_a], %[adv_a] \n\t"
+        // Increment the index of B and C by four words
+        "addi %[start_b], %[start_b], %[adv_b] \n\t"
+        "addi %[idx_c], %[idx_c], %[adv_c] \n\t"
+        "4: \n\t"
+        : [c0] "=&r"(c0), [c1] "=&r"(c1), [c2] "=&r"(c2), [c3] "=&r"(c3),
+          [a] "=&r"(a), [b0] "=&r"(b0), [b1] "=&r"(b1), [b2] "=&r"(b2),
+          [b3] "=&r"(b3), [idx_b] "+&r"(idx_b), [idx_a] "+&r"(start_a),
+          [start_b] "+&r"(start_b), [idx_c] "+&r"(start_c)
+        : [inc_a] "I"(4), [inc_b] "r"(4 * P), [adv_a] "r"(-4 * (int)N),
+          [adv_b] "I"(4 * 4), [adv_c] "I"(4 * 4), [end_a] "r"(end_a),
+          [end_c] "r"(end_c), [N] "r"(N), [P] "r"(P/4)
+        : "memory");
+  }
+}
+
+static inline void mat_mul_asm_parallel_two_hwloops_setup(int32_t const *__restrict__ A,
+                                        int32_t const *__restrict__ B,
+                                        int32_t *__restrict__ C, uint32_t M,
+                                        uint32_t N, uint32_t P, uint32_t id,
+                                        uint32_t numThreads) {
+  // Do this loop M times
+  for (uint32_t i = id; i < M; i += numThreads) {
+    int32_t const *start_a = &A[i * N];
+    int32_t const *end_a = &A[(i + 1) * N];
+    int32_t const *start_b = &B[0];
+    int32_t const *idx_b = &B[0];
+    int32_t *start_c = &C[i * P];
+    int32_t *end_c = &C[(i + 1) * P];
+    // Temporary registers
+    register int32_t *c0;
+    register int32_t *c1;
+    register int32_t *c2;
+    register int32_t *c3;
+    register int32_t a;
+    register int32_t b0;
+    register int32_t b1;
+    register int32_t b2;
+    register int32_t b3;
+    __asm__ volatile(
+        // Outer loop: Calculate four elements of C. Execute this loop P times
+        "lp.setup\tx0, %[P], 4f \n\t"
+        "1: \n\t"
+        "li %[c0],0 \n\t"
+        "li %[c1],0 \n\t"
+        "li %[c2],0 \n\t"
+        "li %[c3],0 \n\t"
+        "mv %[idx_b],%[start_b] \n\t"
+        // Inner loop: Take one element of A to multiply with four elements of
+        // B. Traverse A row major and B column major with four columns in
+        // parallel. Do this loop N times per element
+        ".balign 16 \n\t"
+        "lp.setup\tx1, %[N], 3f \n\t"
+        "2: \n\t"
+        "lw %[a], 0(%[idx_a]) \n\t"
+        "lw %[b0], 0(%[idx_b]) \n\t"
+        "lw %[b1], 4(%[idx_b]) \n\t"
+        "lw %[b2], 8(%[idx_b]) \n\t"
+        "lw %[b3],12(%[idx_b]) \n\t"
+        // Traverse A row wise --> Increment A by one word
+        "addi %[idx_a],%[idx_a],%[inc_a] \n\t"
+        // Traverse B column wise --> Increment B by P words
+        "add %[idx_b],%[idx_b],%[inc_b] \n\t"
+        "mul %[b0],%[a],%[b0] \n\t"
+        "mul %[b1],%[a],%[b1] \n\t"
+        "mul %[b2],%[a],%[b2] \n\t"
+        "mul %[b3],%[a],%[b3] \n\t"
+        "add %[c0],%[c0],%[b0] \n\t"
+        "add %[c1],%[c1],%[b1] \n\t"
+        "add %[c2],%[c2],%[b2] \n\t"
+        "add %[c3],%[c3],%[b3] \n\t"
+        "3: \n\t"
+        // End of inner loop. Store the finished entries of C
+        "sw %[c0], 0(%[idx_c]) \n\t"
+        "sw %[c1], 4(%[idx_c]) \n\t"
+        "sw %[c2], 8(%[idx_c]) \n\t"
+        "sw %[c3], 12(%[idx_c]) \n\t"
+        // A traversed one complete row + one extra word due to the
+        // structure of the loop. Undo these increments to reset
+        // `idx_a` to the first word in the row
+        "add %[idx_a], %[idx_a], %[adv_a] \n\t"
+        // Increment the index of B and C by four words
+        "addi %[start_b], %[start_b], %[adv_b] \n\t"
+        "addi %[idx_c], %[idx_c], %[adv_c] \n\t"
+        "4: \n\t"
+        : [c0] "=&r"(c0), [c1] "=&r"(c1), [c2] "=&r"(c2), [c3] "=&r"(c3),
+          [a] "=&r"(a), [b0] "=&r"(b0), [b1] "=&r"(b1), [b2] "=&r"(b2),
+          [b3] "=&r"(b3), [idx_b] "+&r"(idx_b), [idx_a] "+&r"(start_a),
+          [start_b] "+&r"(start_b), [idx_c] "+&r"(start_c)
+        : [inc_a] "I"(4), [inc_b] "r"(4 * P), [adv_a] "r"(-4 * (int)N),
+          [adv_b] "I"(4 * 4), [adv_c] "I"(4 * 4), [end_a] "r"(end_a),
+          [end_c] "r"(end_c), [N] "r"(N), [P] "r"(P/4)
+        : "memory");
+  }
+}
+
+
 static inline void mat_mul_asm(int32_t const *__restrict__ A,
                                int32_t const *__restrict__ B,
                                int32_t *__restrict__ C, uint32_t M, uint32_t N,
@@ -486,11 +735,32 @@ static inline void mat_mul_asm(int32_t const *__restrict__ A,
   mat_mul_asm_parallel(A, B, C, M, N, P, 0, 1);
 }
 
-static inline void mat_mul_asm_hwloop(int32_t const *__restrict__ A,
+static inline void mat_mul_asm_one_hwloop(int32_t const *__restrict__ A,
                                int32_t const *__restrict__ B,
                                int32_t *__restrict__ C, uint32_t M, uint32_t N,
                                uint32_t P) {
-  mat_mul_asm_parallel_hwloop(A, B, C, M, N, P, 0, 1);
+  mat_mul_asm_parallel_one_hwloop(A, B, C, M, N, P, 0, 1);
+}
+
+static inline void mat_mul_asm_one_hwloop_setup(int32_t const *__restrict__ A,
+                               int32_t const *__restrict__ B,
+                               int32_t *__restrict__ C, uint32_t M, uint32_t N,
+                               uint32_t P) {
+  mat_mul_asm_parallel_one_hwloop_setup(A, B, C, M, N, P, 0, 1);
+}
+
+static inline void mat_mul_asm_two_hwloops(int32_t const *__restrict__ A,
+                               int32_t const *__restrict__ B,
+                               int32_t *__restrict__ C, uint32_t M, uint32_t N,
+                               uint32_t P) {
+  mat_mul_asm_parallel_two_hwloops(A, B, C, M, N, P, 0, 1);
+}
+
+static inline void mat_mul_asm_two_hwloops_setup(int32_t const *__restrict__ A,
+                               int32_t const *__restrict__ B,
+                               int32_t *__restrict__ C, uint32_t M, uint32_t N,
+                               uint32_t P) {
+  mat_mul_asm_parallel_two_hwloops_setup(A, B, C, M, N, P, 0, 1);
 }
 
 

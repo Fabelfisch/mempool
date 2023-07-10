@@ -21,22 +21,22 @@ int main() {
   if(core_id == 0){
     volatile uint32_t i = 0;
     volatile uint32_t j = 0;
+    volatile uint32_t a = 0;
+    volatile uint32_t b = 0;
     printf("Core %3d says Hello!\n", core_id);
     asm volatile( "add %[j], x0, x0         \n\t"
                   "add %[i], x0, x0         \n\t"
-                  "lp.count\tx1, %[N]       \n\t"
-                  "lp.starti\tx1, start0    \n\t"
-                  "lp.endi\tx1, end0        \n\t"
-                  "lp.starti\tx0, startZ    \n\t"
-                  "lp.endi\tx0, endZ        \n\t"
-                  "start0:                  \n\t"
-                  "  lp.count\tx0, %[N]     \n\t"
-                  "  startZ:                \n\t"
+                  "add %[a], x0, x0         \n\t"
+                  "1:                       \n\t"
+                  "  add %[b], x0, x0       \n\t"
+                  "  2:                     \n\t"
                   "    addi %[j], %[j], 1   \n\t"
-                  "  endZ:                  \n\t"
+                  "    addi %[b], %[b], 1   \n\t"
+                  "  bne %[b],%[N], 2b      \n\t"
                   "  addi %[i], %[i], 1     \n\t"
-                  "end0:                    \n\t" 
-                  : [i] "+&r"(i), [j] "+&r"(j)  /* Outputs */
+                  "  addi %[a], %[a], 1     \n\t"
+                  "bne %[a],%[N], 1b        \n\t" 
+                  : [i] "+&r"(i), [j] "+&r"(j), [a] "+&r"(a), [b] "+&r"(b)  /* Outputs */
                   : [N] "r"(10)     /* Inputs */
                   : /* Clobber */);
     printf("i: %3d, j: %3d\n", i,j);

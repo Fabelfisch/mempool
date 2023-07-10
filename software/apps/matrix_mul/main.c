@@ -115,34 +115,46 @@ int main() {
 #endif
 
   // Matrices are initialized --> Start calculating
-  for (int i = 0; i < 2; ++i) {
+  for (int i = 0; i < 5; ++i) {
     // Wait at barrier until everyone is ready
     mempool_barrier(num_cores);
     // Execute function to test. Add a NOP before and after for future analysis
     // with benchmark script.
+    switch (i) {
+    case 0:
+      mat_mul_asm(a, b, c, M, N, P);
+      break;
+    case 1:
+      mat_mul_asm_one_hwloop(a, b, c, M, N, P);
+      break;
+    case 2:
+      mat_mul_asm_two_hwloops(a, b, c, M, N, P);
+      break;
+    case 3:
+      mat_mul_asm_one_hwloop_setup(a, b, c, M, N, P);
+      break;
+    case 4:
+      mat_mul_asm_two_hwloops_setup(a, b, c, M, N, P);
+      break;
+    }
     mempool_timer_t cycles = mempool_get_timer();
     mempool_start_benchmark();
     switch (i) {
     case 0:
-      // printf("Starting with parallel implementation.");
-      // mat_mul_parallel(a, b, c, M, N, P, core_id, num_cores);
       mat_mul_asm(a, b, c, M, N, P);
       break;
     case 1:
-      // printf("Starting with hwloop implementation.");
-      // mat_mul_parallel_hwloop(a, b, c, M, N, P, core_id, num_cores);
-      mat_mul_asm_hwloop(a, b, c, M, N, P);
+      mat_mul_asm_one_hwloop(a, b, c, M, N, P);
       break;
-    // case 2:
-    //   mat_mul_asm_parallel(a, b, c, M, N, P, core_id, num_cores);
-    //   break;
-    // case 3:
-    //   mat_mul_parallel_finegrained(a, b, c, M, N, P, core_id, num_cores);
-    //   break;
-    // case 4:
-    //   mat_mul_unrolled_parallel_finegrained(a, b, c, M, N, P, core_id,
-    //                                         num_cores);
-    //   break;
+    case 2:
+      mat_mul_asm_two_hwloops(a, b, c, M, N, P);
+      break;
+    case 3:
+      mat_mul_asm_one_hwloop_setup(a, b, c, M, N, P);
+      break;
+    case 4:
+      mat_mul_asm_two_hwloops_setup(a, b, c, M, N, P);
+      break;
     }
     mempool_stop_benchmark();
     cycles = mempool_get_timer() - cycles;
